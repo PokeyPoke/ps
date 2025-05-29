@@ -1,18 +1,23 @@
 {
   "name": "ps-2028-popularity",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "2028 election popularity tracker",
+  "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "worker": "node scheduler.js"
+  },
+  "engines": {
+    "node": "20.x",
+    "npm": "10.x"
   },
   "dependencies": {
     "axios": "^1.6.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.19.2",
-    "google-trends-api": "^8.0.0",
+    "google-trends-api": "4.9.2",
     "node-cron": "^3.0.3",
     "pg": "^8.11.2",
     "redis": "^4.9.3",

@@ -2,7 +2,8 @@ import 'dotenv/config';
 import axios from 'axios';
 import cron from 'node-cron';
 import { createClient } from 'redis';
-import googleTrends from 'google-trends-api';
+import pkg from 'google-trends-api';
+const googleTrends = pkg;
 import Snoowrap from 'snoowrap';
 import fs from 'fs';
 import path from 'path';
@@ -14,67 +15,58 @@ const candidates = JSON.parse(
   fs.readFileSync(path.join('data', 'candidates.json'))
 );
 
-// Reddit client
-const r = new Snoowrap({
+const reddit = new Snoowrap({
   userAgent: process.env.REDDIT_USER_AGENT,
   clientId: process.env.REDDIT_CLIENT_ID,
   clientSecret: process.env.REDDIT_CLIENT_SECRET,
   refreshToken: process.env.REDDIT_REFRESH_TOKEN
 });
 
-async function updateGoogleTrends(candidate) {
+async function updateTrends(c) {
   try {
-    const result = await googleTrends.interestOverTime({
-      keyword: candidate.name,
-      startTime: new Date(Date.now() - 1000 * 60 * 60 * 24) // last 24h
+    const res = await googleTrends.interestOverTime({
+      keyword: c.name,
+      startTime: new Date(Date.now() - 1000 * 60 * 60 * 24)
     });
-    const json = JSON.parse(result);
-    const points = json.default.timelineData;
-    const latest = points[points.length - 1].value[0]; // 0-100
-    await redis.set(`candidate:${candidate.id}:trends`, latest);
+    const { default: data } = JSON.parse(res);
+    const latest = data.timelineData.pop().value[0];
+    await redis.set(`candidate:${c.id}:trends`, latest);
   } catch (e) {
-    console.error('GT error', e);
+    console.error('trends', c.name, e.message);
   }
 }
 
-async function updateNewsCount(candidate) {
+async function updateNews(c) {
   try {
-    const url = \`https://gnews.io/api/v4/search?q=\${encodeURIComponent(candidate.name)}&lang=en&token=\${process.env.GNEWS_API_KEY}&max=10\`;
-    const res = await axios.get(url);
-    const count = res.data.totalArticles || res.data.total || 0;
-    await redis.set(\`candidate:\${candidate.id}:news\`, count);
+    const url = \`https://gnews.io/api/v4/search?q=\${encodeURIComponent(c.name)}&lang=en&token=\${process.env.GNEWS_API_KEY}&max=10\`;
+    const { data } = await axios.get(url);
+    const count = data.totalArticles ?? data.total ?? 0;
+    await redis.set(`candidate:${c.id}:news`, count);
   } catch (e) {
-    console.error('News error', e);
+    console.error('news', c.name, e.message);
   }
 }
 
-async function updateRedditMentions(candidate) {
+async function updateSocial(c) {
   try {
-    const posts = await r.search({
-      query: candidate.name,
+    const posts = await reddit.search({
+      query: c.name,
       sort: 'new',
       time: 'day',
       limit: 100
     });
-    await redis.set(\`candidate:\${candidate.id}:social\`, posts.length);
+    await redis.set(`candidate:${c.id}:social`, posts.length);
   } catch (e) {
-    console.error('Reddit error', e);
+    console.error('reddit', c.name, e.message);
   }
 }
 
-async function updateAll() {
-  for (const c of candidates) {
-    await Promise.all([
-      updateGoogleTrends(c),
-      updateNewsCount(c),
-      updateRedditMentions(c)
-    ]);
-  }
-  console.log('External metrics refreshed', new Date().toISOString());
+async function refreshAll() {
+  await Promise.all(
+    candidates.flatMap((c) => [updateTrends(c), updateNews(c), updateSocial(c)])
+  );
+  console.log('metrics updated', new Date().toISOString());
 }
 
-// every 10 minutes
-cron.schedule('*/10 * * * *', updateAll);
-
-// run once at start
-updateAll();
+refreshAll();
+cron.schedule('*/10 * * * *', refreshAll);
