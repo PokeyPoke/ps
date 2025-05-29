@@ -1,0 +1,46 @@
+body {
+  font-family: Arial, sans-serif;
+  max-width: 960px;
+  margin: auto;
+  padding: 1rem;
+  background: #f4f4f4;
+}
+h1 {
+  text-align: center;
+}
+.card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.flex {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+button {
+  cursor: pointer;
+}
+.vote-btn {
+  background: #007bff;
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+}
+.vote-btn[disabled] {
+  background: #aaa;
+}
+.click-btn {
+  margin-top: 0.5rem;
+  background: #ff5722;
+  color: #fff;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+}
+.metric {
+  margin-top: 0.3rem;
+}

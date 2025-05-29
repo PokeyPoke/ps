@@ -1,0 +1,17 @@
+[
+  {
+    "id": "dem1",
+    "name": "Jane Doe",
+    "party": "Democratic"
+  },
+  {
+    "id": "rep1",
+    "name": "John Smith",
+    "party": "Republican"
+  },
+  {
+    "id": "third1",
+    "name": "Alex Johnson",
+    "party": "Independent"
+  }
+]
