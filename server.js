@@ -12,7 +12,17 @@ app.use(express.json());
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: '*' } });
 
-const redis = createClient({ url: process.env.REDIS_URL });
+// pick the TLS URL if Heroku gives us one, otherwise fall back to REDIS_URL
+const redisUrl = process.env.REDIS_TLS_URL || process.env.REDIS_URL;
+
+const redis = createClient({
+  url: redisUrl,
+  socket: {
+    tls: true,               // tell node‑redis we’re using TLS
+    rejectUnauthorized: false // accept Heroku’s self‑signed cert
+  }
+});
+
 await redis.connect();
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
