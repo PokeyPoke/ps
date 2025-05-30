@@ -6,73 +6,80 @@ import { createClient } from 'redis';
 import pg from 'pg';
 import fs from 'fs';
 import path from 'path';
+import compression from 'compression';
+
+const PORT = process.env.PORT || 3000;
 
 const app = express();
-app.use(express.json());
+app.use(compression());              // gzip static assets
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: '*' } });
 
-// pick the TLS URL if Heroku gives us one, otherwise fall back to REDIS_URL
+// Redis connection (TLS in prod)
 const redisUrl = process.env.REDIS_TLS_URL || process.env.REDIS_URL;
-
 const redis = createClient({
   url: redisUrl,
   socket: {
-    tls: true,               // tell node‑redis we’re using TLS
-    rejectUnauthorized: false // accept Heroku’s self‑signed cert
+    tls: !!process.env.REDIS_TLS_URL,
+    rejectUnauthorized: false
   }
 });
-
 await redis.connect();
 
-const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-});
+// Postgres pool
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 
+// DB table bootstrap
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS votes (
+    candidate_id TEXT PRIMARY KEY,
+    total_votes  BIGINT DEFAULT 0,
+    total_clicks BIGINT DEFAULT 0
+  );`);
 
-// ---- DB table bootstrap --------------------------------
-const createVotesTableSQL = `
-CREATE TABLE IF NOT EXISTS votes (
-  candidate_id  TEXT   PRIMARY KEY,
-  total_votes   BIGINT DEFAULT 0,
-  total_clicks  BIGINT DEFAULT 0
-);`;
+// Load candidates list
+const candidates = JSON.parse(fs.readFileSync(path.join('data','candidates.json')));
 
-await pool.query(createVotesTableSQL);
-// --------------------------------------------------------
-
-
-const candidates = JSON.parse(
-  fs.readFileSync(path.join('data', 'candidates.json'))
-);
-
-for (const c of candidates) {
-  await pool.query(
-    'INSERT INTO votes (candidate_id) VALUES ($1) ON CONFLICT DO NOTHING',
-    [c.id]
-  );
-  const vKey = `candidate:${c.id}:votes`;
-  const cKey = `candidate:${c.id}:clicks`;
-  if (!(await redis.exists(vKey))) await redis.set(vKey, 0);
-  if (!(await redis.exists(cKey))) await redis.set(cKey, 0);
+// Ensure rows exist & load persisted counts
+for (const {id} of candidates) {
+  await pool.query('INSERT INTO votes (candidate_id) VALUES ($1) ON CONFLICT DO NOTHING', [id]);
+}
+const { rows } = await pool.query('SELECT * FROM votes');
+for (const row of rows) {
+  await redis.set(`candidate:${row.candidate_id}:votes`, row.total_votes);
+  await redis.set(`candidate:${row.candidate_id}:clicks`, row.total_clicks);
 }
 
-app.use(express.static('public'));
+// Serve React static build
+const distPath = path.resolve('dist');
+app.use(express.static(distPath));
+app.get('*', (_, res) => res.sendFile(path.join(distPath,'index.html')));
 
-io.on('connection', (socket) => {
-  (async () => {
-    let snapshot = [];
-    for (const c of candidates) {
-      const votes = Number(await redis.get(`candidate:${c.id}:votes`)) || 0;
-      const clicks = Number(await redis.get(`candidate:${c.id}:clicks`)) || 0;
-      const trends = Number(await redis.get(`candidate:${c.id}:trends`)) || 0;
-      const news = Number(await redis.get(`candidate:${c.id}:news`)) || 0;
-      const social = Number(await redis.get(`candidate:${c.id}:social`)) || 0;
-      snapshot.push({ ...c, votes, clicks, trends, news, social });
-    }
-    socket.emit('snapshot', snapshot);
-  })();
+// Helper to build snapshot
+const buildSnapshot = async () => {
+  const snapshot = [];
+  for (const c of candidates) {
+    const [votes, clicks, trends, news, social] = await Promise.all([
+      redis.get(`candidate:${c.id}:votes`),
+      redis.get(`candidate:${c.id}:clicks`),
+      redis.get(`candidate:${c.id}:trends`),
+      redis.get(`candidate:${c.id}:news`),
+      redis.get(`candidate:${c.id}:social`)
+    ]);
+    snapshot.push({ ...c,
+      votes: Number(votes)||0,
+      clicks: Number(clicks)||0,
+      trends: Number(trends)||0,
+      news: Number(news)||0,
+      social: Number(social)||0
+    });
+  }
+  return snapshot;
+};
+
+// Socket.io
+io.on('connection', async (socket) => {
+  socket.emit('snapshot', await buildSnapshot());
 
   socket.on('vote', async ({ candidateId }) => {
     await redis.incr(`candidate:${candidateId}:votes`);
@@ -85,17 +92,18 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
-httpServer.listen(PORT, () => console.log(`Server on ${PORT}`));
-
-// Durability flush every minute
+// Persist Redis counters to Postgres every minute
 setInterval(async () => {
-  for (const c of candidates) {
-    const votes = Number(await redis.get(`candidate:${c.id}:votes`)) || 0;
-    const clicks = Number(await redis.get(`candidate:${c.id}:clicks`)) || 0;
+  for (const {id} of candidates) {
+    const [votes, clicks] = await Promise.all([
+      redis.get(`candidate:${id}:votes`),
+      redis.get(`candidate:${id}:clicks`)
+    ]);
     await pool.query(
-      'UPDATE votes SET total_votes=$1, total_clicks=$2 WHERE candidate_id=$3',
-      [votes, clicks, c.id]
+      'UPDATE votes SET total_votes=$2, total_clicks=$3 WHERE candidate_id=$1',
+      [id, Number(votes)||0, Number(clicks)||0]
     );
   }
-}, 60000);
+}, 60*1000);
+
+httpServer.listen(PORT, () => console.log('Server on', PORT));

@@ -1,17 +1,27 @@
 [
   {
-    "id": "dem1",
-    "name": "Jane Doe",
-    "party": "Democratic"
+    "id": "biden",
+    "name": "Joe Biden",
+    "party": "D"
   },
   {
-    "id": "rep1",
-    "name": "John Smith",
-    "party": "Republican"
+    "id": "trump",
+    "name": "Donald Trump",
+    "party": "R"
   },
   {
-    "id": "third1",
-    "name": "Alex Johnson",
-    "party": "Independent"
+    "id": "desantis",
+    "name": "Ron DeSantis",
+    "party": "R"
+  },
+  {
+    "id": "newsom",
+    "name": "Gavin Newsom",
+    "party": "D"
+  },
+  {
+    "id": "kennedy",
+    "name": "Robert F. Kennedy Jr.",
+    "party": "I"
   }
 ]
