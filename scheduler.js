@@ -8,7 +8,17 @@ import Snoowrap from 'snoowrap';
 import fs from 'fs';
 import path from 'path';
 
-const redis = createClient({ url: process.env.REDIS_URL });
+// pick the TLS URL if Heroku gives us one, otherwise fall back to REDIS_URL
+const redisUrl = process.env.REDIS_TLS_URL || process.env.REDIS_URL;
+
+const redis = createClient({
+  url: redisUrl,
+  socket: {
+    tls: true,               // tell node‑redis we’re using TLS
+    rejectUnauthorized: false // accept Heroku’s self‑signed cert
+  }
+});
+
 await redis.connect();
 
 const candidates = JSON.parse(
