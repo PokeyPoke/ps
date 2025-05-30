@@ -17,12 +17,17 @@ await redis.connect();
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
-await pool.query(\`
-  CREATE TABLE IF NOT EXISTS votes (
-    candidate_id TEXT PRIMARY KEY,
-    total_votes BIGINT DEFAULT 0,
-    total_clicks BIGINT DEFAULT 0
-  )\`);
+// ---- DB table bootstrap --------------------------------
+const createVotesTableSQL = `
+CREATE TABLE IF NOT EXISTS votes (
+  candidate_id  TEXT   PRIMARY KEY,
+  total_votes   BIGINT DEFAULT 0,
+  total_clicks  BIGINT DEFAULT 0
+);`;
+
+await pool.query(createVotesTableSQL);
+// --------------------------------------------------------
+
 
 const candidates = JSON.parse(
   fs.readFileSync(path.join('data', 'candidates.json'))
